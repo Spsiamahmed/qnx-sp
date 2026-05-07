@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QnX SP - Messenger</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        * { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background: #f0f2f5; height: 100dvh; display: flex; justify-content: center; }
+        .glass { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(20px); }
+        .orange-gradient { background: linear-gradient(135deg, #ff9a44 0%, #fc6076 100%); }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hidden { display: none !important; }
+        .active-nav { color: #fc6076 !important; transform: scale(1.1); font-weight: 800; }
+        .fb-post { background: white; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 15px; border: 1px solid #dddfe2; }
+        .verified-badge { color: #0866ff; fill: #0866ff; width: 14px; height: 14px; margin-left: 3px; }
+        .icon-card { cursor: pointer; border: 2px solid transparent; transition: 0.2s; border-radius: 12px; padding: 10px; background: #f8f9fa; }
+        .icon-card.selected { border-color: #fc6076; background: white; transform: scale(1.1); }
+    </style>
+</head>
+<body class="w-full max-w-[480px]">
+
+    <div class="w-full h-full flex flex-col glass relative overflow-hidden md:shadow-2xl md:rounded-[40px] my-auto">
+        
+        <div id="auth-screen" class="absolute inset-0 z-[200] bg-white flex flex-col items-center justify-center p-8 text-center">
+            <div class="orange-gradient w-20 h-20 rounded-[30px] flex items-center justify-center text-white shadow-xl mb-6">
+                <i data-lucide="zap" class="w-10 h-10 fill-white"></i> 
+            </div>
+            <h1 class="text-4xl font-black text-gray-800 tracking-tighter mb-10">QnX SP</h1>
+            <div class="w-full space-y-4">
+                <input id="email" type="email" placeholder="ইমেইল" class="w-full p-4 rounded-2xl bg-gray-50 border outline-none">
+                <input id="pass" type="password" placeholder="পাসওয়ার্ড" class="w-full p-4 rounded-2xl bg-gray-50 border outline-none">
+                <button onclick="handleAuth()" class="orange-gradient w-full py-4 rounded-2xl text-white font-bold shadow-lg">Login</button>
+            </div>
+            <p onclick="toggleAuth()" id="auth-toggle-text" class="mt-6 text-sm font-bold text-orange-500 cursor-pointer">নতুন অ্যাকাউন্ট খুলুন</p>
+        </div>
+
+        <header id="main-brand-header" class="p-4 flex justify-between items-center border-b bg-white hidden">
+            <div class="flex items-center gap-3">
+                <div class="orange-gradient w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md"><i data-lucide="zap" class="w-5 h-5 fill-white"></i></div>
+                <div>
+                    <h1 class="text-xl font-black text-gray-800 leading-none">QnX SP</h1>
+                    <div class="flex items-center gap-1 mt-1">
+                        <span id="user-display-name" class="text-[10px] font-bold text-orange-500 uppercase tracking-tighter">User</span>
+                        <i data-lucide="badge-check" class="verified-badge"></i>
+                    </div>
+                </div>
+            </div>
+            <div id="header-profile-icon" class="w-10 h-10 bg-white rounded-2xl flex items-center justify-center border text-orange-500 shadow-sm"><i data-lucide="user" class="w-5 h-5"></i></div>
+        </header>
+
+        <main id="main-content" class="flex-1 overflow-y-auto p-4 hide-scrollbar hidden"></main>
+
+        <div id="chat-bar" class="p-4 bg-white border-t hidden flex items-center gap-2">
+            <input id="msg-input" type="text" placeholder="মেসেজ লিখুন..." class="flex-1 bg-gray-100 p-4 rounded-full outline-none text-xs font-semibold">
+            <button id="send-btn" class="orange-gradient w-12 h-12 rounded-full flex items-center justify-center text-white shadow-lg"><i data-lucide="send" class="w-5 h-5"></i></button>
+        </div>
+
+        <nav id="app-nav" class="p-4 bg-white flex justify-around items-center border-t hidden">
+            <button onclick="showSection('feed')" id="nav-feed"><i data-lucide="home" class="w-6 h-6"></i></button>
+            <button onclick="showSection('users')" id="nav-users"><i data-lucide="users" class="w-6 h-6"></i></button>
+            <button onclick="showSection('global')" id="nav-global"><i data-lucide="message-circle" class="w-6 h-6"></i></button>
+            <button onclick="showSection('post')" id="nav-post"><i data-lucide="plus-square" class="w-6 h-6"></i></button>
+            <button onclick="showSection('profile')" id="nav-profile"><i data-lucide="settings" class="w-6 h-6"></i></button>
+        </nav>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, deleteDoc, where, getDocs, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDgSdYkM86bvrAoK5ay8wqioTIUBK9QRrU",
+            authDomain: "my-messager-da060.firebaseapp.com",
+            projectId: "my-messager-da060",
+            storageBucket: "my-messager-da060.firebasestorage.app",
+            messagingSenderId: "449407149709",
+            appId: "1:449407149709:web:aa1ee62bf41c13288da4c4"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let isLogin = true, activeListener = null, selectedIcon = 'user';
+
+        // --- Auth Logic ---
+        window.toggleAuth = () => { isLogin = !isLogin; document.getElementById('auth-toggle-text').innerText = isLogin ? "নতুন অ্যাকাউন্ট খুলুন" : "লগইন করুন"; };
+        
+        window.handleAuth = async () => {
+            const e = document.getElementById('email').value, p = document.getElementById('pass').value;
+            try {
+                if(isLogin) await signInWithEmailAndPassword(auth, e, p);
+                else {
+                    const r = await createUserWithEmailAndPassword(auth, e, p);
+                    await setDoc(doc(db, "users", r.user.uid), { uid: r.user.uid, name: e.split('@')[0], photoIcon: 'user', online: true });
+                }
+            } catch(err) { alert(err.message); }
+        };
+
+        // Logout function
+        window.logoutNow = () => {
+            if(confirm("আপনি কি নিশ্চিতভাবে লগ আউট করতে চান?")) {
+                signOut(auth).catch(err => alert(err.message));
+            }
+        };
+
+        onAuthStateChanged(auth, async user => {
+            if(user) {
+                document.getElementById('auth-screen').classList.add('hidden');
+                ['main-brand-header', 'main-content', 'app-nav'].forEach(id => document.getElementById(id).classList.remove('hidden'));
+                updateHeaderData();
+                showSection('feed');
+            } else { 
+                // Logout হলে সব কন্টেন্ট হাইড করে লগইন স্ক্রিন দেখাবে
+                document.getElementById('auth-screen').classList.remove('hidden');
+                ['main-brand-header', 'main-content', 'app-nav', 'chat-bar'].forEach(id => document.getElementById(id).classList.add('hidden'));
+            }
+            lucide.createIcons();
+        });
+
+        async function updateHeaderData() {
+            if(!auth.currentUser) return;
+            const u = await getDoc(doc(db, "users", auth.currentUser.uid));
+            const d = u.data();
+            selectedIcon = d.photoIcon || 'user';
+            document.getElementById('user-display-name').innerText = d.name;
+            document.getElementById('header-profile-icon').innerHTML = `<i data-lucide="${selectedIcon}" class="w-5 h-5"></i>`;
+            lucide.createIcons();
+        }
+
+        // --- Sections ---
+        window.showSection = async (type, target = null) => {
+            const main = document.getElementById('main-content'), chatBar = document.getElementById('chat-bar');
+            if(activeListener) activeListener();
+            main.innerHTML = ''; chatBar.classList.add('hidden');
+            document.querySelectorAll('nav button').forEach(b => b.classList.remove('active-nav'));
+
+            if(type === 'feed') {
+                document.getElementById('nav-feed').classList.add('active-nav');
+                activeListener = onSnapshot(query(collection(db, "posts"), orderBy("time", "desc")), snap => {
+                    main.innerHTML = '';
+                    snap.forEach(d => {
+                        const p = d.data(), isMe = p.authorId === auth.currentUser.uid;
+                        const hasLiked = p.likedBy?.includes(auth.currentUser.uid);
+                        const time = p.time ? new Date(p.time.seconds * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'Just now';
+                        
+                        main.innerHTML += `
+                        <div class="fb-post">
+                            <div class="p-4 flex justify-between items-center">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 orange-gradient rounded-full flex items-center justify-center text-white"><i data-lucide="${p.icon || 'user'}" class="w-5 h-5"></i></div>
+                                    <div>
+                                        <h4 class="font-bold text-sm">${p.author} <i data-lucide="badge-check" class="verified-badge"></i></h4>
+                                        <p class="text-[10px] text-gray-400">${time}</p>
+                                    </div>
+                                </div>
+                                ${isMe ? `<button onclick="editPost('${d.id}', '${p.text}')" class="text-gray-400"><i data-lucide="more-horizontal" class="w-5 h-5"></i></button>` : ''}
+                            </div>
+                            <div class="px-5 pb-3 text-sm text-gray-700 leading-relaxed">${p.text}</div>
+                            <div class="px-5 py-2 flex items-center gap-1 text-[10px] font-bold text-gray-400 border-t">
+                                <i data-lucide="heart" class="w-3 h-3 fill-red-500 text-red-500"></i> ${p.likes || 0} People loved this
+                            </div>
+                            <div class="flex border-t">
+                                <button onclick="toggleLove('${d.id}', ${JSON.stringify(p.likedBy || [])})" class="flex-1 py-3 flex items-center justify-center gap-2 text-xs font-bold ${hasLiked ? 'text-red-500' : 'text-gray-500'}">
+                                    <i data-lucide="heart" class="w-5 h-5 ${hasLiked ? 'fill-red-500' : ''}"></i> লাভ
+                                </button>
+                                <button onclick="alert('Shared!')" class="flex-1 py-3 flex items-center justify-center gap-2 text-xs font-bold text-gray-500">
+                                    <i data-lucide="share-2" class="w-5 h-5"></i> শেয়ার
+                                </button>
+                            </div>
+                        </div>`;
+                    });
+                    lucide.createIcons();
+                });
+            } else if(type === 'post') {
+                document.getElementById('nav-post').classList.add('active-nav');
+                main.innerHTML = `<div class="bg-white p-6 rounded-3xl shadow-sm border">
+                    <h3 class="font-bold mb-4">Create New Post</h3>
+                    <textarea id="post-text" placeholder="আপনার মনে কি চলছে?" class="w-full p-4 h-40 bg-gray-50 rounded-2xl outline-none border resize-none"></textarea>
+                    <button onclick="publishPost()" class="w-full mt-6 orange-gradient py-4 rounded-2xl text-white font-bold shadow-lg">SHARE POST</button>
+                </div>`;
+            } else if(type === 'profile') {
+                document.getElementById('nav-profile').classList.add('active-nav');
+                const u = await getDoc(doc(db, "users", auth.currentUser.uid));
+                const data = u.data(); selectedIcon = data.photoIcon || 'user';
+                main.innerHTML = `
+                    <div class="p-4 text-center">
+                        <div id="p-icon-preview" class="w-24 h-24 orange-gradient rounded-[30px] mx-auto flex items-center justify-center text-white mb-6 border-4 border-white shadow-xl">
+                            <i data-lucide="${selectedIcon}" class="w-10 h-10"></i>
+                        </div>
+                        <input id="p-name" value="${data.name}" class="w-full p-4 rounded-2xl border text-center font-bold mb-6 bg-white outline-none">
+                        <p class="text-[10px] font-black text-gray-400 mb-4 uppercase tracking-widest">Select Icon</p>
+                        <div class="grid grid-cols-5 gap-3 mb-8">
+                            ${['Smile', 'User', 'Zap', 'Heart', 'Star', 'Moon', 'Sun', 'Ghost', 'Flame', 'Anchor'].map(i => `
+                                <div onclick="selectIcon('${i.toLowerCase()}')" data-icon="${i.toLowerCase()}" class="icon-card ${selectedIcon === i.toLowerCase() ? 'selected' : ''}">
+                                    <i data-lucide="${i.toLowerCase()}" class="w-6 h-6 text-gray-500"></i>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <button onclick="saveProfile()" class="orange-gradient w-full py-4 rounded-2xl text-white font-bold mb-8 shadow-lg">UPDATE PROFILE</button>
+                        <button onclick="logoutNow()" class="text-red-500 font-bold text-xs uppercase hover:underline">Logout Account</button>
+                    </div>`;
+            } else if(type === 'users') {
+                document.getElementById('nav-users').classList.add('active-nav');
+                activeListener = onSnapshot(collection(db, "users"), snap => {
+                    main.innerHTML = '';
+                    snap.forEach(d => {
+                        const u = d.data(); if(u.uid === auth.currentUser.uid) return;
+                        main.innerHTML += `<div onclick="showSection('chat', {uid:'${u.uid}', name:'${u.name}'})" class="flex items-center gap-4 p-4 bg-white rounded-2xl mb-3 border shadow-sm">
+                            <div class="w-12 h-12 orange-gradient rounded-xl flex items-center justify-center text-white"><i data-lucide="${u.photoIcon || 'user'}"></i></div>
+                            <div class="flex-1 font-bold text-sm text-gray-800">${u.name} <i data-lucide="badge-check" class="verified-badge"></i></div>
+                            <div class="w-3 h-3 rounded-full ${u.online ? 'bg-green-500 shadow-[0_0_8px_green]' : 'bg-red-500'}"></div>
+                        </div>`;
+                    });
+                    lucide.createIcons();
+                });
+            } else if(type === 'global') {
+                document.getElementById('nav-global').classList.add('active-nav');
+                chatBar.classList.remove('hidden');
+                loadChat('global_chat');
+                document.getElementById('send-btn').onclick = () => sendMsg('global_chat');
+            } else if(type === 'chat') {
+                chatBar.classList.remove('hidden');
+                const path = `chats/${[auth.currentUser.uid, target.uid].sort().join('_')}/messages`;
+                loadChat(path);
+                document.getElementById('send-btn').onclick = () => sendMsg(path);
+            }
+            lucide.createIcons();
+        };
+
+        // --- Logic Functions ---
+        window.toggleLove = async (id, list) => {
+            const uid = auth.currentUser.uid, ref = doc(db, "posts", id);
+            if(list.includes(uid)) await updateDoc(ref, { likedBy: arrayRemove(uid), likes: list.length - 1 });
+            else await updateDoc(ref, { likedBy: arrayUnion(uid), likes: list.length + 1 });
+        };
+
+        window.selectIcon = (i) => {
+            selectedIcon = i;
+            document.querySelectorAll('.icon-card').forEach(c => c.classList.remove('selected'));
+            document.querySelector(`[data-icon="${i}"]`).classList.add('selected');
+            document.getElementById('p-icon-preview').innerHTML = `<i data-lucide="${i}" class="w-10 h-10"></i>`;
+            lucide.createIcons();
+        };
+
+        window.saveProfile = async () => {
+            const name = document.getElementById('p-name').value, uid = auth.currentUser.uid;
+            await updateDoc(doc(db, "users", uid), { name, photoIcon: selectedIcon });
+            const snap = await getDocs(query(collection(db, "posts"), where("authorId", "==", uid)));
+            snap.forEach(async d => await updateDoc(doc(db, "posts", d.id), { author: name, icon: selectedIcon }));
+            alert("প্রোফাইল আপডেট হয়েছে!"); updateHeaderData();
+        };
+
+        window.publishPost = async () => {
+            const t = document.getElementById('post-text').value; if(!t) return;
+            const u = await getDoc(doc(db, "users", auth.currentUser.uid));
+            await addDoc(collection(db, "posts"), { text: t, author: u.data().name, authorId: auth.currentUser.uid, icon: u.data().photoIcon, likes: 0, likedBy: [], time: serverTimestamp() });
+            showSection('feed');
+        };
+
+        window.editPost = async (id, old) => {
+            const act = prompt("Type 'e' to Edit or 'd' to Delete:");
+            if(act === 'e') {
+                const nt = prompt("নতুন টেক্সট লিখুন:", old);
+                if(nt) await updateDoc(doc(db, "posts", id), { text: nt });
+            } else if(act === 'd') {
+                if(confirm("পোস্টটি মুছে ফেলবেন?")) await deleteDoc(doc(db, "posts", id));
+            }
+        };
+
+        function loadChat(path) {
+            activeListener = onSnapshot(query(collection(db, path), orderBy("time", "asc")), snap => {
+                const main = document.getElementById('main-content');
+                main.innerHTML = '';
+                snap.forEach(d => {
+                    const m = d.data(), isMe = m.sender === auth.currentUser.uid;
+                    const time = m.time ? new Date(m.time.seconds * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '...';
+                    main.innerHTML += `<div class="flex flex-col ${isMe ? 'items-end' : 'items-start'} mb-3">
+                        <div onclick="${isMe ? `msgOptions('${path}','${d.id}','${m.text}')` : ''}" class="${isMe ? 'orange-gradient text-white shadow-md' : 'bg-white border text-gray-700 shadow-sm'} px-4 py-3 rounded-[20px] max-w-[85%] ${isMe?'rounded-br-none':'rounded-bl-none'}">
+                            <p class="text-sm font-semibold">${m.text}</p>
+                            <p class="text-[8px] mt-1 opacity-50 text-right">${time} ${isMe ? '• TAP TO EDIT' : ''}</p>
+                        </div>
+                    </div>`;
+                });
+                main.scrollTop = main.scrollHeight;
+            });
+        }
+
+        window.msgOptions = async (path, id, text) => {
+            const act = prompt("Edit (e) or Delete (d)?");
+            if(act === 'e') {
+                const nt = prompt("মেসেজ এডিট করুন:", text);
+                if(nt) await updateDoc(doc(db, path, id), { text: nt });
+            } else if(act === 'd') {
+                if(confirm("মেসেজটি মুছে ফেলবেন?")) await deleteDoc(doc(db, path, id));
+            }
+        };
+
+        window.sendMsg = async (path) => {
+            const inp = document.getElementById('msg-input'); if(!inp.value.trim()) return;
+            const text = inp.value; inp.value = '';
+            await addDoc(collection(db, path), { text, sender: auth.currentUser.uid, time: serverTimestamp() });
+        };
+
+        lucide.createIcons();
+    </script>
+</body>
+</html>
